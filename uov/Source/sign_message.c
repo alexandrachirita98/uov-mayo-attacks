@@ -16,6 +16,7 @@
 #include "UOVClassic.h"
 #include "LUOV.h"
 #include "LinearAlgebra.h"
+#include "twister.h"
 #include "buffer.h"
 #include "api.h"
 
@@ -80,7 +81,13 @@ int main(int argc, char **argv) {
     size_t pk_bytes_len = (size_t)M * tri;
     unsigned char *pk_bytes = malloc(pk_bytes_len);
     if (!pk_bytes) { fprintf(stderr, "alloc failed\n"); return 1; }
-    Matrix Q = calculatePrivateQ(SK.T, PK.seed);
+    /* Reproduce exactly what UOVClassic_verify consumes for the v×v and v×o
+     * blocks: a fresh twister seeded with PK.seed, generating D × M field
+     * elements in the same (i,j) row-major order verify walks. Do NOT use
+     * calculatePrivateQ — that returns the *private* Q with v×o modified by T. */
+    twister MT;
+    seedMT(&MT, PK.seed);
+    Matrix Q = randomMatrixMT(V * (V + 1) / 2 + V * O, M, &MT);
     for (int k = 0; k < M; k++) {
         size_t out = (size_t)k * tri;
         int q_col = -1;          /* cursor into Q's rows for the v×v/v×o blocks */
