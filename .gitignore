@@ -1,0 +1,28 @@
+# Generated artifacts (script output, notebook inputs)
+/inputs/
+
+# MAYO build tree
+/mayo/build/
+
+# UOV compiled artifacts
+/uov/Source/sign_message
+/uov/Source/uov_demo
+/uov/Source/**/*.o
+/uov/Source/**/*.a
+
+# Backups created by the UOV header patches (reversible-edit safety net)
+/uov/Source/**/*.bak
+
+# KAT / test outputs that MAYO drops next to its binaries
+/mayo/build/apps/PQCsignKAT_*.req
+/mayo/build/apps/PQCsignKAT_*.rsp
+
+# Python / Jupyter
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# IDE / OS noise
+.vscode/
+.idea/
+.DS_Store
