@@ -111,6 +111,38 @@ int main(int argc, char **argv) {
             }
         }
     }
+    /* DIAGNOSTIC: verify p_k(o) == 0 for each oil basis vector o_r and each
+     * equation k, using the upper-tri matrices we just wrote. */
+    {
+        int fails = 0, checks = 0;
+        for (int r = 0; r < O; r++) {
+            /* oil vector o_r: o[i] = T[i][r] for i<V, o[V+r] = 1, else 0 */
+            FELT o[64];  /* assumes N <= 64; OK for our toy params */
+            for (int i = 0; i < V; i++) o[i] = minus(SK.T.array[i][r]);
+            for (int i = V; i < N; i++) o[i] = (i == V + r) ? ONE : ZERO;
+
+            for (int k = 0; k < M; k++) {
+                /* Evaluate p_k(o) = sum_{i<=j} P_k_upper[i,j] * o[i] * o[j] */
+                FELT s = ZERO;
+                size_t idx = (size_t)k * tri;
+                for (int i = 0; i < N; i++) {
+                    for (int j = i; j < N; j++) {
+                        FELT a = (FELT)pk_bytes[idx++];
+                        FELT term = multiply(multiply(a, o[i]), o[j]);
+                        s = add(s, term);
+                    }
+                }
+                checks++;
+                if (!isEqual(s, ZERO)) {
+                    if (fails < 3) fprintf(stderr, "[diag] p_%d(o_%d) = %d (expected 0)\n",
+                                            k, r, (int)s);
+                    fails++;
+                }
+            }
+        }
+        fprintf(stderr, "[diag] oil-space checks: %d/%d failed\n", fails, checks);
+    }
+
     destroy(Q);
 
     /* Sign: sm = msg || sig (signature at offset mlen, length CRYPTO_BYTES). */
