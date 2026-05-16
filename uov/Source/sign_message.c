@@ -15,6 +15,7 @@
 #include "UOVHash.h"
 #include "UOVClassic.h"
 #include "LUOV.h"
+#include "LinearAlgebra.h"
 #include "buffer.h"
 #include "api.h"
 
@@ -58,27 +59,54 @@ int main(int argc, char **argv) {
     if (mkdir_p(out_dir) != 0) { perror(out_dir); return 1; }
 
     size_t mlen = strlen(message);
-    unsigned char *pk = malloc(CRYPTO_PUBLICKEYBYTES);
     unsigned char *sk = malloc(CRYPTO_SECRETKEYBYTES);
     unsigned char *m  = malloc(mlen);
     unsigned char *sm = malloc(mlen + CRYPTO_BYTES);
-    if (!pk || !sk || !m || !sm) { fprintf(stderr, "alloc failed\n"); return 1; }
+    if (!sk || !m || !sm) { fprintf(stderr, "alloc failed\n"); return 1; }
     memcpy(m, message, mlen);
 
-    /* keypair: replicates the wrappers from common/main.c without modifying it */
+    /* Keypair. Keep PK/SK live so we can expand the public matrices below. */
+    PublicKey PK; SecretKey SK;
+    generateKeyPair(&PK, &SK);
     {
-        writer W = newWriter(sk);
-        PublicKey PK; SecretKey SK;
-        generateKeyPair(&PK, &SK);
-        serialize_SecretKey(&W, &SK);
-        W = newWriter(pk);
-        serialize_PublicKey(&W, &PK);
-        destroy_SecretKey(&SK);
-        destroy_PublicKey(&PK);
+        writer Wsk = newWriter(sk);
+        serialize_SecretKey(&Wsk, &SK);
     }
 
-    /* sign: layout is sm = msg || sig (sig at offset mlen, length CRYPTO_BYTES) */
-    unsigned long long smlen;
+    /* Expand pk to the m × N*(N+1)/2 upper-triangular layout expected by the
+     * notebook parser: for each equation k, walk rows i in [0,N) and write
+     * columns j in [i,N) using Q for the v×v and v×o blocks, PK.B2 for o×o. */
+    size_t tri = (size_t)N * (N + 1) / 2;
+    size_t pk_bytes_len = (size_t)M * tri;
+    unsigned char *pk_bytes = malloc(pk_bytes_len);
+    if (!pk_bytes) { fprintf(stderr, "alloc failed\n"); return 1; }
+    Matrix Q = calculatePrivateQ(SK.T, PK.seed);
+    for (int k = 0; k < M; k++) {
+        size_t out = (size_t)k * tri;
+        int q_col = -1;          /* cursor into Q's rows for the v×v/v×o blocks */
+        int b2_col = -1;         /* cursor into PK.B2's rows for the o×o block */
+        for (int i = 0; i < N; i++) {
+            for (int j = i; j < N; j++) {
+                FELT val;
+                if (i < V) {
+                    if (j < V)      val = Q.array[++q_col][k];   /* v×v upper-tri */
+                    else            val = Q.array[++q_col][k];   /* v×o */
+                } else {
+                    /* recompute lex index in B2 only when entering oil row i */
+                    if (j == i) {
+                        /* lex index of (i-V, i-V) in O*(O+1)/2 layout */
+                        int row = i - V;
+                        b2_col = row * O - (row * (row - 1)) / 2 - 1;
+                    }
+                    val = PK.B2.array[++b2_col][k];
+                }
+                pk_bytes[out++] = (unsigned char)val;
+            }
+        }
+    }
+    destroy(Q);
+
+    /* Sign: sm = msg || sig (signature at offset mlen, length CRYPTO_BYTES). */
     {
         reader R = newReader(sk);
         writer W = newWriter(sm);
@@ -89,17 +117,15 @@ int main(int argc, char **argv) {
         Signature signature = signDocument(skey, m, mlen);
         serialize_signature(&W, &signature);
         serialize_uint64_t(&W, 0, (8 - W.bitsUsed) % 8);
-        smlen = W.next;
         destroy_signature(&signature);
         destroy_SecretKey(&skey);
     }
 
     int rc = 0;
-    rc |= write_file(out_dir, pk_file,  pk, CRYPTO_PUBLICKEYBYTES);
+    rc |= write_file(out_dir, pk_file,  pk_bytes, pk_bytes_len);
     rc |= write_file(out_dir, sig_file, sm + mlen, CRYPTO_BYTES);
     rc |= write_file(out_dir, msg_file, m, mlen);
 
-    /* Emit uov_params.json from compile-time macros (avoids fragile header parsing). */
     {
         unsigned long long q;
 #ifdef PRIME_FIELD
@@ -117,7 +143,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    free(pk); free(sk); free(m); free(sm);
-    (void)smlen;
+    destroy_SecretKey(&SK);
+    destroy_PublicKey(&PK);
+    free(pk_bytes); free(sk); free(m); free(sm);
     return rc ? 1 : 0;
 }
