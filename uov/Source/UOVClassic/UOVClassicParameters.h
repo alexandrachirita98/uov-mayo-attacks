@@ -19,7 +19,7 @@
 
 /*derived parameters */
 enum { O = M };
-enum { V = 2 * O + 1 };
+enum { V = O };
 enum { N = O + V };
 enum { D = V*(V + 1) / 2 + O*V };
 enum { D2 = O*(O + 1) / 2 };
