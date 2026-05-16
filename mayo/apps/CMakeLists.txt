@@ -29,11 +29,12 @@ foreach(MVARIANT ${MVARIANT_S})
     target_include_directories(example_nistapi_${MVARIANT_LOWER} PRIVATE ../include ../src/${MVARIANT_LOWER})
 endforeach()
 
-## Custom signer that takes a user-provided message
+## Custom signer that takes a user-provided message (per-variant)
 foreach(MVARIANT ${MVARIANT_S})
     string(TOLOWER ${MVARIANT} MVARIANT_LOWER)
     add_executable(sign_message_${MVARIANT_LOWER} sign_message.c)
-    target_link_libraries(sign_message_${MVARIANT_LOWER} PRIVATE ${MVARIANT_LOWER}_nistapi)
-    target_include_directories(sign_message_${MVARIANT_LOWER} PRIVATE ../include ../src/${MVARIANT_LOWER})
+    target_link_libraries(sign_message_${MVARIANT_LOWER} PRIVATE ${MVARIANT_LOWER}_nistapi mayo_common_sys)
+    target_include_directories(sign_message_${MVARIANT_LOWER} PRIVATE ../include ../src/${MVARIANT_LOWER} ../src/common)
+    target_compile_definitions(sign_message_${MVARIANT_LOWER} PRIVATE SM_VARIANT=${MVARIANT})
 endforeach()
 
